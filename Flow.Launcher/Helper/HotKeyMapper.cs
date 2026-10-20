@@ -32,14 +32,24 @@ internal static class HotKeyMapper
 
     internal static void OnToggleHotkey(object sender, HotkeyEventArgs args)
     {
-        if (!_mainViewModel.ShouldIgnoreHotkeys())
-            _mainViewModel.ToggleFlowLauncher();
+        HandleToggleHotkey("RegisterHotKey");
     }
 
     internal static void OnToggleHotkeyWithChefKeys()
     {
-        if (!_mainViewModel.ShouldIgnoreHotkeys())
-            _mainViewModel.ToggleFlowLauncher();
+        HandleToggleHotkey("ChefKeys");
+    }
+
+    private static void HandleToggleHotkey(string source)
+    {
+        if (_mainViewModel.ShouldIgnoreHotkeys())
+        {
+            HotkeyDiagnostics.Log($"hotkey ({source}) IGNORED: fullscreen={_settings.IgnoreHotkeysOnFullscreen} gameMode={_mainViewModel.GameModeStatus}");
+            return;
+        }
+
+        HotkeyDiagnostics.Log($"hotkey ({source}) received");
+        _mainViewModel.ToggleFlowLauncher();
     }
 
     private static void SetHotkey(string hotkeyStr, EventHandler<HotkeyEventArgs> action)

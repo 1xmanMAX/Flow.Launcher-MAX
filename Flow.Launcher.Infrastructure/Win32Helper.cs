@@ -146,6 +146,33 @@ namespace Flow.Launcher.Infrastructure
             return PInvoke.SetForegroundWindow(new(handle));
         }
 
+        /// <summary>
+        /// Brings the window to the foreground even when Windows' foreground lock refuses a plain
+        /// SetForegroundWindow, by temporarily attaching to the input queue of the current foreground thread.
+        /// </summary>
+        public static bool ForceSetForegroundWindow(Window window)
+        {
+            var hwnd = GetWindowHandle(window);
+            if (hwnd == HWND.Null) return false;
+            if (IsForegroundWindow(hwnd)) return true;
+
+            var foregroundThread = PInvoke.GetWindowThreadProcessId(PInvoke.GetForegroundWindow());
+            var currentThread = PInvoke.GetCurrentThreadId();
+            var attached = foregroundThread != 0 && foregroundThread != currentThread &&
+                           PInvoke.AttachThreadInput(currentThread, foregroundThread, true);
+            try
+            {
+                PInvoke.BringWindowToTop(hwnd);
+                PInvoke.SetForegroundWindow(hwnd);
+            }
+            finally
+            {
+                if (attached) PInvoke.AttachThreadInput(currentThread, foregroundThread, false);
+            }
+
+            return IsForegroundWindow(hwnd);
+        }
+
         public static bool IsForegroundWindow(Window window)
         {
             return IsForegroundWindow(GetWindowHandle(window));

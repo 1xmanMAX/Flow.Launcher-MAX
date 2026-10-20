@@ -17,6 +17,7 @@ using System.Windows.Threading;
 using CommunityToolkit.Mvvm.DependencyInjection;
 using Flow.Launcher.Core.Plugin;
 using Flow.Launcher.Core.Resource;
+using Flow.Launcher.Helper;
 using Flow.Launcher.Infrastructure;
 using Flow.Launcher.Infrastructure.Hotkey;
 using Flow.Launcher.Infrastructure.DialogJump;
@@ -48,6 +49,8 @@ namespace Flow.Launcher
 
         // Class Name
         private static readonly string ClassName = nameof(MainWindow);
+
+        private long _lastShownAt;
 
         // Dependency Injection
         private readonly Settings _settings;
@@ -268,6 +271,19 @@ namespace Flow.Launcher
                                     UpdatePosition();
                                     Activate();
 
+                                    // Windows' foreground lock can silently refuse Activate(), leaving the window
+                                    // visible but unable to receive typing
+                                    if (!Win32Helper.IsForegroundWindow(this))
+                                    {
+                                        var forced = Win32Helper.ForceSetForegroundWindow(this);
+                                        HotkeyDiagnostics.Log($"activate refused by Windows, forced foreground: {(forced ? "OK" : "FAILED")}");
+                                    }
+                                    else
+                                    {
+                                        HotkeyDiagnostics.Log("shown and activated");
+                                    }
+                                    _lastShownAt = HotkeyDiagnostics.Now;
+
                                     // Reset preview
                                     // Can't await in Dispatcher.Invoke; fire-and-forget but safely log any failure
                                     _ = _viewModel.ResetPreviewAsync().ContinueWith(static t =>
@@ -462,6 +478,7 @@ namespace Flow.Launcher
 
                 if (_settings.HideWhenDeactivated && !_viewModel.ExternalPreviewVisible)
                 {
+                    HotkeyDiagnostics.Log($"deactivated -> hide ({HotkeyDiagnostics.Now - _lastShownAt} ms after show)");
                     _viewModel.Hide();
                 }
             }

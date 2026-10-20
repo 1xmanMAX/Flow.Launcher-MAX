@@ -2092,7 +2092,10 @@ namespace Flow.Launcher.ViewModel
 
         public void ToggleFlowLauncher()
         {
-            if (!MainWindowVisibilityStatus)
+            // A hide that is still running has already cloaked the window, so to the user it is hidden:
+            // the press must show it, not start a second hide
+            HotkeyDiagnostics.Log($"toggle: status={MainWindowVisibilityStatus} hidePending={_hidePending} -> {(!MainWindowVisibilityStatus || _hidePending ? "Show" : "Hide")}");
+            if (!MainWindowVisibilityStatus || _hidePending)
             {
                 Show();
             }
@@ -2318,10 +2321,23 @@ namespace Flow.Launcher.ViewModel
 
 #pragma warning disable VSTHRD100 // Avoid async void methods
 
+        // Incremented by every Show/Hide so a hide that finishes after a newer Show can tell it is stale
+        private int _visibilityRequestId;
+        private bool _hidePending;
+
         public void Show()
         {
             // When application is exiting, we should not show the main window
-            if (App.LoadingOrExiting) return;
+            if (App.LoadingOrExiting)
+            {
+                HotkeyDiagnostics.Log("show skipped: app loading or exiting");
+                return;
+            }
+
+            _visibilityRequestId++;
+            var interruptedHide = _hidePending;
+            _hidePending = false;
+            HotkeyDiagnostics.Log($"show begin (interruptedHide={interruptedHide})");
 
             // When application is exiting, the Application.Current will be null
             Application.Current?.Dispatcher.Invoke(() =>
@@ -2352,7 +2368,16 @@ namespace Flow.Launcher.ViewModel
 
             // Update WPF properties
             MainWindowVisibility = Visibility.Visible;
-            MainWindowVisibilityStatus = true;
+            if (MainWindowVisibilityStatus)
+            {
+                // Status is still true when a pending hide was interrupted, so setting it would not raise
+                // PropertyChanged and the window would never be activated and focused
+                OnPropertyChanged(nameof(MainWindowVisibilityStatus));
+            }
+            else
+            {
+                MainWindowVisibilityStatus = true;
+            }
             VisibilityChanged?.Invoke(this, new VisibilityChangedEventArgs { IsVisible = true });
 
             // Switch keyboard layout
@@ -2371,6 +2396,10 @@ namespace Flow.Launcher.ViewModel
 
         public async void Hide(bool reset = true)
         {
+            var requestId = ++_visibilityRequestId;
+            _hidePending = true;
+            HotkeyDiagnostics.Log($"hide begin (reset={reset})");
+
             if (reset)
             {
                 lastHistoryIndex = 1;
@@ -2403,6 +2432,13 @@ namespace Flow.Launcher.ViewModel
                             LastQuerySelected = false;
                         break;
                 }
+            }
+
+            // A Show happened while the awaits above were running: don't cloak the window it just showed
+            if (requestId != _visibilityRequestId)
+            {
+                HotkeyDiagnostics.Log("hide cancelled before cloak: superseded by a newer show/hide");
+                return;
             }
 
             // When application is exiting, the Application.Current will be null
@@ -2444,6 +2480,16 @@ namespace Flow.Launcher.ViewModel
 
             // Delay for a while to make sure clock will not flicker
             await Task.Delay(50);
+
+            // A Show during the delay already uncloaked and activated the window: leave it visible
+            if (requestId != _visibilityRequestId)
+            {
+                HotkeyDiagnostics.Log("hide cancelled after cloak: superseded by a newer show/hide");
+                return;
+            }
+
+            _hidePending = false;
+            HotkeyDiagnostics.Log("hide end");
 
             // Update WPF properties
             MainWindowVisibilityStatus = false;

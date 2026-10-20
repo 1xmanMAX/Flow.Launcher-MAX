@@ -23,6 +23,9 @@ MAX_PATH
 SystemParametersInfo
 
 SetForegroundWindow
+AttachThreadInput
+GetCurrentThreadId
+BringWindowToTop
 
 WINDOW_LONG_PTR_INDEX
 GetForegroundWindow

@@ -234,7 +234,9 @@ namespace Flow.Launcher
 
                 // Initialize hotkey mapper instantly after main window is created because
                 // it will steal focus from main window which causes window hide
+                HotkeyDiagnostics.Start(Current.Dispatcher);
                 HotKeyMapper.Initialize();
+                HotkeyDiagnostics.Log($"hotkey registered: {_settings.Hotkey}");
 
                 // Initialize theme for main window
                 Ioc.Default.GetRequiredService<Theme>().ChangeTheme();
