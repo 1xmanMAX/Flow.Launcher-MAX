@@ -50,7 +50,11 @@ namespace Flow.Launcher
         // Class Name
         private static readonly string ClassName = nameof(MainWindow);
 
+        private const int FocusStealGraceMs = 2000;
+        private const int MaxFocusReclaims = 3;
+
         private long _lastShownAt;
+        private int _focusReclaims;
 
         // Dependency Injection
         private readonly Settings _settings;
@@ -283,6 +287,7 @@ namespace Flow.Launcher
                                         HotkeyDiagnostics.Log("shown and activated");
                                     }
                                     _lastShownAt = HotkeyDiagnostics.Now;
+                                    _focusReclaims = 0;
 
                                     // Reset preview
                                     // Can't await in Dispatcher.Invoke; fire-and-forget but safely log any failure
@@ -478,7 +483,30 @@ namespace Flow.Launcher
 
                 if (_settings.HideWhenDeactivated && !_viewModel.ExternalPreviewVisible)
                 {
-                    HotkeyDiagnostics.Log($"deactivated -> hide ({HotkeyDiagnostics.Now - _lastShownAt} ms after show)");
+                    // Programs waking up under load (browsers, terminals) grab focus right after Flow is shown.
+                    // Hiding then looks like the hotkey failed, so take focus back when the user didn't cause the change.
+                    var msSinceShow = HotkeyDiagnostics.Now - _lastShownAt;
+                    // Not when Flow is hiding on purpose (a result launched an app) or focus went to Flow's own windows
+                    if (msSinceShow < FocusStealGraceMs && _focusReclaims < MaxFocusReclaims &&
+                        !_viewModel.IsHidePending && !_viewModel.IsExecutingResult &&
+                        !Win32Helper.IsForegroundWindowInCurrentProcess() &&
+                        !Win32Helper.IsUserSwitchingFocus())
+                    {
+                        _focusReclaims++;
+                        var thief = Win32Helper.DescribeForegroundWindow();
+                        var reclaimed = Win32Helper.ForceSetForegroundWindow(this);
+                        HotkeyDiagnostics.Log($"focus stolen {msSinceShow} ms after show by {thief}, reclaim #{_focusReclaims}: {(reclaimed ? "OK" : "FAILED")}");
+                        if (reclaimed)
+                        {
+                            QueryTextBox.Focus();
+                            return;
+                        }
+                    }
+
+                    HotkeyDiagnostics.Log($"deactivated -> hide ({msSinceShow} ms after show), focus taken by: {Win32Helper.DescribeForegroundWindow()} " +
+                                          $"[reclaims={_focusReclaims} hidePending={_viewModel.IsHidePending} executing={_viewModel.IsExecutingResult} " +
+                                          $"ownWindow={Win32Helper.IsForegroundWindowInCurrentProcess()} mouse={Win32Helper.IsMouseButtonDown()} " +
+                                          $"physicalAltWin={GlobalHotkey.IsPhysicalAltOrWinDown} anyAltWin={Win32Helper.IsAltOrWinDownIncludingInjected()}]");
                     _viewModel.Hide();
                 }
             }

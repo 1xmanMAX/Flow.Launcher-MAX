@@ -173,6 +173,35 @@ namespace Flow.Launcher.Infrastructure
             return IsForegroundWindow(hwnd);
         }
 
+        public static unsafe bool IsForegroundWindowInCurrentProcess()
+        {
+            uint pid;
+            PInvoke.GetWindowThreadProcessId(PInvoke.GetForegroundWindow(), &pid);
+            return pid == (uint)Environment.ProcessId;
+        }
+
+        /// <summary>
+        /// True when the user is physically doing something that moves focus: a mouse button is held
+        /// (clicking another window or the taskbar) or Alt / Win is held (Alt+Tab, Start menu).
+        /// A focus change without any of these was made by another program, not the user.
+        /// </summary>
+        public static bool IsUserSwitchingFocus()
+        {
+            return IsMouseButtonDown() || Hotkey.GlobalHotkey.IsPhysicalAltOrWinDown;
+        }
+
+        public static bool IsMouseButtonDown()
+        {
+            return IsKeyDown(VIRTUAL_KEY.VK_LBUTTON) || IsKeyDown(VIRTUAL_KEY.VK_RBUTTON) || IsKeyDown(VIRTUAL_KEY.VK_MBUTTON);
+        }
+
+        public static bool IsAltOrWinDownIncludingInjected()
+        {
+            return IsKeyDown(VIRTUAL_KEY.VK_MENU) || IsKeyDown(VIRTUAL_KEY.VK_LWIN) || IsKeyDown(VIRTUAL_KEY.VK_RWIN);
+        }
+
+        private static bool IsKeyDown(VIRTUAL_KEY key) => (PInvoke.GetAsyncKeyState((int)key) & 0x8000) != 0;
+
         public static bool IsForegroundWindow(Window window)
         {
             return IsForegroundWindow(GetWindowHandle(window));
@@ -854,6 +883,27 @@ namespace Flow.Launcher.Infrastructure
         internal static unsafe string GetProcessNameFromHwnd(HWND hWnd)
         {
             return Path.GetFileName(GetProcessPathFromHwnd(hWnd));
+        }
+
+        /// <summary>
+        /// Describes the current foreground window as "process.exe [WindowClass]", for diagnostics
+        /// </summary>
+        public static unsafe string DescribeForegroundWindow()
+        {
+            var hWnd = PInvoke.GetForegroundWindow();
+            if (hWnd.Equals(HWND.Null)) return "(none)";
+
+            const int capacity = 256;
+            Span<char> buffer = stackalloc char[capacity];
+            int validLength;
+            fixed (char* pBuffer = buffer)
+            {
+                validLength = PInvoke.GetClassName(hWnd, pBuffer, capacity);
+            }
+
+            var processPath = GetProcessPathFromHwnd(hWnd);
+            var processName = string.IsNullOrEmpty(processPath) ? "?" : Path.GetFileName(processPath);
+            return $"{processName} [{buffer[..validLength].ToString()}]";
         }
 
         internal static unsafe string GetProcessPathFromHwnd(HWND hWnd)

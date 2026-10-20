@@ -62,6 +62,26 @@ namespace Flow.Launcher.Infrastructure.Hotkey
             return state;
         }
 
+        private const uint LLKHF_INJECTED = 0x10;
+
+        /// <summary>
+        /// True while the user is physically holding Alt or Win. Unlike GetAsyncKeyState this ignores
+        /// key presses injected by programs (some apps fake an Alt press to be allowed to steal focus).
+        /// </summary>
+        public static bool IsPhysicalAltOrWinDown { get; private set; }
+
+        private static void TrackPhysicalAltOrWin(WPARAM wParam, LPARAM lParam)
+        {
+            var vkCode = (VIRTUAL_KEY)Marshal.ReadInt32(lParam);
+            if (vkCode is not (VIRTUAL_KEY.VK_MENU or VIRTUAL_KEY.VK_LMENU or VIRTUAL_KEY.VK_RMENU or VIRTUAL_KEY.VK_LWIN or VIRTUAL_KEY.VK_RWIN))
+                return;
+
+            var flags = (uint)Marshal.ReadInt32(lParam, 8);
+            if ((flags & LLKHF_INJECTED) != 0) return;
+
+            IsPhysicalAltOrWinDown = wParam.Value == (int)KeyEvent.WM_KEYDOWN || wParam.Value == (int)KeyEvent.WM_SYSKEYDOWN;
+        }
+
         private static LRESULT HookKeyboardCallback(int nCode, WPARAM wParam, LPARAM lParam)
         {
             bool continues = true;
@@ -73,6 +93,8 @@ namespace Flow.Launcher.Infrastructure.Hotkey
                     wParam.Value == (int)KeyEvent.WM_SYSKEYDOWN ||
                     wParam.Value == (int)KeyEvent.WM_SYSKEYUP)
                 {
+                    TrackPhysicalAltOrWin(wParam, lParam);
+
                     if (hookedKeyboardCallback != null)
                         continues = hookedKeyboardCallback((KeyEvent)wParam.Value, Marshal.ReadInt32(lParam), CheckModifiers());
                 }

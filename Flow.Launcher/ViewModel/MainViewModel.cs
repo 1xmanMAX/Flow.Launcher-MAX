@@ -581,33 +581,42 @@ namespace Flow.Launcher.ViewModel
             var hideWindow = false;
             var isDialogJumpLeftClick = _isDialogJump && Settings.DialogJumpResultBehaviour == DialogJumpResultBehaviours.LeftClick;
 
-            // For Dialog Jump and left click mode, we need to navigate to the path
-            if (isDialogJumpLeftClick)
+            // The launched app taking focus is expected, the main window must not reclaim it
+            IsExecutingResult = true;
+            try
             {
-                if (result is DialogJumpResult dialogJumpResult)
+                // For Dialog Jump and left click mode, we need to navigate to the path
+                if (isDialogJumpLeftClick)
                 {
-                    Win32Helper.SetForegroundWindow(DialogWindowHandle);
-                    _ = Task.Run(() => DialogJump.JumpToPathAsync(DialogWindowHandle, dialogJumpResult.DialogJumpPath));
+                    if (result is DialogJumpResult dialogJumpResult)
+                    {
+                        Win32Helper.SetForegroundWindow(DialogWindowHandle);
+                        _ = Task.Run(() => DialogJump.JumpToPathAsync(DialogWindowHandle, dialogJumpResult.DialogJumpPath));
+                    }
+                    else
+                    {
+                        App.API.LogError(ClassName, "DialogJumpResult expected but got a different result type.");
+                    }
                 }
+                // For query mode, we execute the result
                 else
                 {
-                    App.API.LogError(ClassName, "DialogJumpResult expected but got a different result type.");
+                    hideWindow = await result.ExecuteAsync(new ActionContext
+                    {
+                        // not null means pressing modifier key + number, should ignore the modifier key
+                        SpecialKeyState = index is not null ? SpecialKeyState.Default : GlobalHotkey.CheckModifiers()
+                    }).ConfigureAwait(false);
+                }
+
+                // Only hide for query results (not Dialog Jump left-click mode)
+                if (!isDialogJumpLeftClick && hideWindow)
+                {
+                    Hide();
                 }
             }
-            // For query mode, we execute the result
-            else
+            finally
             {
-                hideWindow = await result.ExecuteAsync(new ActionContext
-                {
-                    // not null means pressing modifier key + number, should ignore the modifier key
-                    SpecialKeyState = index is not null ? SpecialKeyState.Default : GlobalHotkey.CheckModifiers()
-                }).ConfigureAwait(false);
-            }
-
-            // Only hide for query results (not Dialog Jump left-click mode)
-            if (!isDialogJumpLeftClick && hideWindow)
-            {
-                Hide();
+                IsExecutingResult = false;
             }
 
             // Record user selected result for result ranking
@@ -2324,6 +2333,10 @@ namespace Flow.Launcher.ViewModel
         // Incremented by every Show/Hide so a hide that finishes after a newer Show can tell it is stale
         private int _visibilityRequestId;
         private bool _hidePending;
+
+        public bool IsHidePending => _hidePending;
+
+        public bool IsExecutingResult { get; private set; }
 
         public void Show()
         {
