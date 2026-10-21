@@ -190,8 +190,9 @@ namespace Flow.Launcher.Plugin.Explorer.Search
                         }
                     }
 
+                    // Searching inside a folder the user is browsing: take the file manager there.
                     // If path search is disabled just open it in file manager
-                    if (Settings.DefaultOpenFolderInFileManager || (!Settings.PathSearchKeywordEnabled && !Settings.SearchActionKeywordEnabled))
+                    if (query.SearchScope != null || Settings.DefaultOpenFolderInFileManager || (!Settings.PathSearchKeywordEnabled && !Settings.SearchActionKeywordEnabled))
                     {
                         try
                         {

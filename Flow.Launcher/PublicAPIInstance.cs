@@ -370,6 +370,10 @@ namespace Flow.Launcher
 
                 if (Path.GetFileNameWithoutExtension(explorerPath) == "explorer")
                 {
+                    // Flow was opened over an Explorer window: take that window there instead of opening a new one
+                    if (LaunchExplorer.TryNavigate(directoryPath, fileNameOrFilePath is null ? null : targetPath))
+                        return;
+
                     // Windows File Manager
                     if (fileNameOrFilePath is null)
                     {

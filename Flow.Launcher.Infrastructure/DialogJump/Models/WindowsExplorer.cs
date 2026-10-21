@@ -103,6 +103,81 @@ namespace Flow.Launcher.Infrastructure.DialogJump.Models
             return path;
         }
 
+        /// <summary>
+        /// Navigates the active tab of this window to <paramref name="folderPath"/> and, when given,
+        /// selects <paramref name="selectPath"/> once the folder has loaded.
+        /// </summary>
+        public bool Navigate(string folderPath, string selectPath = null)
+        {
+            if (Handle == IntPtr.Zero || string.IsNullOrEmpty(folderPath)) return false;
+
+            var activeTabHandle = GetActiveTabHandle(new(Handle));
+            if (activeTabHandle.IsNull) return false;
+
+            var window = GetExplorerByTabHandle(activeTabHandle);
+            if (window == null) return false;
+
+            var navigated = StartSTAThread(() =>
+            {
+                try
+                {
+                    // CSWin32 Navigate2 takes VARIANTs, so use dynamic binding through IDispatch
+                    ((dynamic)window).Navigate2(folderPath);
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
+            }) ?? false;
+
+            if (navigated && !string.IsNullOrEmpty(selectPath))
+            {
+                var selectThread = new Thread(() => SelectItemWhenLoaded(window, folderPath, selectPath))
+                {
+                    IsBackground = true
+                };
+                selectThread.SetApartmentState(ApartmentState.STA);
+                selectThread.Start();
+            }
+
+            return navigated;
+        }
+
+        private static void SelectItemWhenLoaded(IWebBrowser2 window, string folderPath, string selectPath)
+        {
+            const int SVSI_SELECT = 0x1, SVSI_DESELECTOTHERS = 0x4, SVSI_ENSUREVISIBLE = 0x8, SVSI_FOCUSED = 0x10;
+
+            var fileName = System.IO.Path.GetFileName(selectPath);
+            var expectedFolder = folderPath.TrimEnd('\\');
+
+            // The view object is replaced when the navigation completes, so poll until it shows the new folder
+            var deadline = DateTime.UtcNow.AddSeconds(3);
+            while (DateTime.UtcNow < deadline)
+            {
+                try
+                {
+                    dynamic view = window.Document;
+                    string currentFolder = view.Folder.Self.Path;
+                    if (string.Equals(currentFolder?.TrimEnd('\\'), expectedFolder, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var item = view.Folder.ParseName(fileName);
+                        if (item != null)
+                        {
+                            view.SelectItem(item, SVSI_SELECT | SVSI_DESELECTOTHERS | SVSI_ENSUREVISIBLE | SVSI_FOCUSED);
+                            return;
+                        }
+                    }
+                }
+                catch
+                {
+                    // View is not ready yet
+                }
+
+                Thread.Sleep(50);
+            }
+        }
+
         public void Dispose()
         {
 

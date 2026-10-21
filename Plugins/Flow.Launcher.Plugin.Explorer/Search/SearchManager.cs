@@ -78,6 +78,11 @@ namespace Flow.Launcher.Plugin.Explorer.Search
         /// </summary>
         internal async Task<List<Result>> SearchAsync(Query query, CancellationToken token)
         {
+            if (query.SearchScope != null)
+            {
+                return await FolderScopeSearchAsync(query, token).ConfigureAwait(false);
+            }
+
             var results = new HashSet<Result>(PathEqualityComparator.Instance);
 
             var keyword = query.ActionKeyword.Length == 0 ? Query.GlobalPluginWildcardSign : query.ActionKeyword;
@@ -108,6 +113,9 @@ namespace Flow.Launcher.Plugin.Explorer.Search
 
             string engineName;
 
+            // Only set for name searches, where ".docx" words filter by extension
+            SearchFilter filter = null;
+
             switch (isPathSearch)
             {
                 case true
@@ -132,7 +140,8 @@ namespace Flow.Launcher.Plugin.Explorer.Search
 
                 case false
                     when CanUseIndexSearchByActionKeywords(activeActionKeywords):
-                    searchResults = Settings.IndexProvider.SearchAsync(query.Search, token);
+                    filter = SearchFilter.Parse(query.Search);
+                    searchResults = Settings.IndexProvider.SearchAsync(GetEngineSearch(filter, Settings.IndexProvider is EverythingSearchManager), token);
                     engineName = Enum.GetName(Settings.IndexSearchEngine);
                     break;
                 default:
@@ -148,7 +157,11 @@ namespace Flow.Launcher.Plugin.Explorer.Search
             {
                 await foreach (var search in searchResults.WithCancellation(token).ConfigureAwait(false))
                 {
-                    if (search.Type == ResultType.File && IsExcludedFile(search))
+                    if (filter != null && !filter.Matches(search))
+                        continue;
+
+                    // Typing an extension asks for those files even when they are excluded
+                    if (search.Type == ResultType.File && filter?.HasExtensions != true && IsExcludedFile(search))
                         continue;
 
                     if (IsResultTypeFilteredByActionKeyword(search.Type, actions))
@@ -174,6 +187,87 @@ namespace Flow.Launcher.Plugin.Explorer.Search
                 excludedPath => FilesFolders.PathContains(excludedPath.Path, r.SubTitle, allowEqual: true)));
 
             return [.. results];
+        }
+
+        /// <summary>
+        /// Search restricted to <see cref="Query.SearchScope"/> and its subfolders. Lists the folder itself when the search is empty.
+        /// </summary>
+        private async Task<List<Result>> FolderScopeSearchAsync(Query query, CancellationToken token)
+        {
+            var results = new HashSet<Result>(PathEqualityComparator.Instance);
+            var scopePath = query.SearchScope;
+
+            if (!System.IO.Directory.Exists(scopePath))
+                return [.. results];
+
+            var filter = SearchFilter.Parse(query.Search);
+
+            IAsyncEnumerable<SearchResult> searchResults;
+            string engineName;
+            if (string.IsNullOrWhiteSpace(query.Search))
+            {
+                var folderPath = scopePath.EndsWith(Constants.DirectorySeparator) ? scopePath : scopePath + Constants.DirectorySeparator;
+                searchResults = DirectoryInfoSearch.TopLevelDirectorySearch(query, folderPath, token).ToAsyncEnumerable();
+                engineName = Enum.GetName(PathEnumerationEngineOption.DirectEnumeration);
+            }
+            else if (Settings.PathEnumerationEngine == PathEnumerationEngineOption.Everything
+                     || (Settings.PathEnumerationEngine == PathEnumerationEngineOption.WindowsIndex && UseWindowsIndexForDirectorySearch(scopePath)))
+            {
+                var engineSearch = GetEngineSearch(filter, Settings.PathEnumerator is EverythingSearchManager);
+                searchResults = Settings.PathEnumerator.EnumerateAsync(scopePath, engineSearch, true, token);
+                engineName = Enum.GetName(Settings.PathEnumerationEngine);
+            }
+            else
+            {
+                // Folder is not indexed or indexing is turned off, walk it directly
+                searchResults = DirectoryInfoSearch.RecursiveSearch(scopePath, filter, token).ToAsyncEnumerable();
+                engineName = Enum.GetName(PathEnumerationEngineOption.DirectEnumeration);
+            }
+
+            try
+            {
+                await foreach (var search in searchResults.WithCancellation(token).ConfigureAwait(false))
+                {
+                    if (!filter.Matches(search))
+                        continue;
+
+                    // Typing an extension asks for those files even when they are excluded
+                    if (search.Type == ResultType.File && !filter.HasExtensions && IsExcludedFile(search))
+                        continue;
+
+                    results.Add(ResultManager.CreateResult(query, search));
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return [.. results];
+            }
+            catch (EngineNotAvailableException)
+            {
+                throw;
+            }
+            catch (Exception e)
+            {
+                throw new SearchException(engineName, e.Message, e);
+            }
+
+            return [.. results];
+        }
+
+        /// <summary>
+        /// Everything filters extensions in the query itself, other engines get the name and are filtered afterwards.
+        /// </summary>
+        private string GetEngineSearch(SearchFilter filter, bool isEverything)
+        {
+            return isEverything ? filter.ToEverythingSearch(GetExcludedFileTypes()) : filter.ToPlainSearch();
+        }
+
+        private string[] GetExcludedFileTypes()
+        {
+            return Settings.ExcludedFileTypes
+                .Split([','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(x => x.TrimStart('.'))
+                .ToArray();
         }
 
         private List<Result> EverythingContentSearchResult(Query query)
@@ -294,10 +388,9 @@ namespace Flow.Launcher.Plugin.Explorer.Search
             if (string.IsNullOrEmpty(result.FullPath))
                 return false;
 
-            string[] excludedFileTypes = Settings.ExcludedFileTypes.Split([','], StringSplitOptions.RemoveEmptyEntries);
             string fileExtension = Path.GetExtension(result.FullPath).TrimStart('.');
 
-            return excludedFileTypes.Contains(fileExtension, StringComparer.OrdinalIgnoreCase);
+            return SearchFilter.IsExcludedExtension(fileExtension, GetExcludedFileTypes());
         }
 
         private List<Result> GetQuickAccessResultsFilteredByActionKeyword(Query query, List<ActionKeyword> actions)

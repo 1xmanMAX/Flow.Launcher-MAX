@@ -85,7 +85,9 @@ namespace Flow.Launcher.Plugin.Explorer.Search.Everything
                 ParentPath: path,
                 IsRecursive: recursive,
                 MaxCount: Settings.MaxResult,
-                IsFullPathSearch: Settings.EverythingSearchFullPath,
+                // Inside a folder every result shares its path, so match names only: matching the
+                // full path is several times slower and also returns everything under matching subfolders
+                IsFullPathSearch: false,
                 IsRunCounterEnabled: Settings.EverythingEnableRunCount);
 
             await foreach (var result in api.SearchAsync(option, token))

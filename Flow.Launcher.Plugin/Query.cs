@@ -54,6 +54,12 @@ namespace Flow.Launcher.Plugin
         public string Search { get; internal init; }
 
         /// <summary>
+        /// Folder the user scoped this search to, or null for a normal search.
+        /// When set, <see cref="Search"/> should only be matched against that folder and its subfolders.
+        /// </summary>
+        public string SearchScope { get; internal init; }
+
+        /// <summary>
         /// The search string split into a string array.
         /// Does not include the <see cref="ActionKeyword"/>.
         /// </summary>

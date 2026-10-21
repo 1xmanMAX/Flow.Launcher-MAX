@@ -800,7 +800,12 @@ namespace Flow.Launcher.Infrastructure.DialogJump
 
         // Edited from: https://github.com/idkidknow/Flow.Launcher.Plugin.DirQuickJump
 
-        public static async Task<bool> JumpToPathAsync(nint hwnd, string path)
+        public static Task<bool> JumpToPathAsync(nint hwnd, string path)
+        {
+            return JumpToPathAsync(hwnd, path, _settings.DialogJumpFileResultBehaviour);
+        }
+
+        public static async Task<bool> JumpToPathAsync(nint hwnd, string path, DialogJumpFileResultBehaviours fileResultBehaviour)
         {
             // Check handle
             if (hwnd == nint.Zero) return false;
@@ -815,7 +820,27 @@ namespace Flow.Launcher.Infrastructure.DialogJump
             var dialogWindowTab = GetDialogWindowTab(new(hwnd));
             if (dialogWindowTab == null) return false;
 
-            return await JumpToPathAsync(dialogWindowTab, path, isFile, false);
+            return await JumpToPathAsync(dialogWindowTab, path, isFile, false, fileResultBehaviour);
+        }
+
+        /// <summary>
+        /// Whether <paramref name="hwnd"/> is a file dialog that Dialog Jump can navigate.
+        /// </summary>
+        public static bool IsDialogWindow(nint hwnd)
+        {
+            if (hwnd == nint.Zero) return false;
+
+            try
+            {
+                // Not disposed: the window may be the one Dialog Jump keeps tracking
+                var dialogWindow = GetDialogWindow(new(hwnd));
+                return dialogWindow != null;
+            }
+            catch (System.Exception e)
+            {
+                Log.Exception(ClassName, "Failed to check dialog window", e);
+                return false;
+            }
         }
 
         private static async Task<bool> NavigateDialogPathAsync(HWND hwnd, bool auto = false)
@@ -949,7 +974,8 @@ namespace Flow.Launcher.Infrastructure.DialogJump
             return null;
         }
 
-        private static async Task<bool> JumpToPathAsync(IDialogJumpDialogWindowTab dialog, string path, bool isFile, bool auto = false)
+        private static async Task<bool> JumpToPathAsync(IDialogJumpDialogWindowTab dialog, string path, bool isFile, bool auto = false,
+            DialogJumpFileResultBehaviours? fileResultBehaviour = null)
         {
             // Jump after flow launcher window vanished (after JumpAction returned true)
             // and the dialog had been in the foreground.
@@ -964,7 +990,7 @@ namespace Flow.Launcher.Infrastructure.DialogJump
                 bool result;
                 if (isFile)
                 {
-                    switch (_settings.DialogJumpFileResultBehaviour)
+                    switch (fileResultBehaviour ?? _settings.DialogJumpFileResultBehaviour)
                     {
                         case DialogJumpFileResultBehaviours.FullPath:
                             Log.Debug(ClassName, $"File Jump FullPath: {path}");

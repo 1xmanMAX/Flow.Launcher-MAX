@@ -567,19 +567,22 @@ namespace Flow.Launcher.ViewModel
                 return;
             }
 
+            var isFolderScopeSuggestion = result.ContextData == FolderScopeSuggestionMarker;
+
             // New history result must be recorded before ExecuteAsync and Hide() is called, otherwise when in 'Empty Last Query' query style mode
             // the QueryAsync call will reconstruct the result list without the new item.
             // This must happen before ExecuteAsync because some plugin actions call HideMainWindow() inside their action,
             // which triggers a home query that reads history before _history.Add would have been called.
             // Also, add item to history only if it is from results but not context menu or history.
-            if (queryResultsSelected)
+            if (queryResultsSelected && !isFolderScopeSuggestion)
             {
                 _history.Add(result);
                 lastHistoryIndex = 1;
             }
 
             var hideWindow = false;
-            var isDialogJumpLeftClick = _isDialogJump && Settings.DialogJumpResultBehaviour == DialogJumpResultBehaviours.LeftClick;
+            var dialogJumpFromHotkey = _isDialogJump && _dialogJumpFromHotkey;
+            var isDialogJumpLeftClick = _isDialogJump && (dialogJumpFromHotkey || Settings.DialogJumpResultBehaviour == DialogJumpResultBehaviours.LeftClick);
 
             // The launched app taking focus is expected, the main window must not reclaim it
             IsExecutingResult = true;
@@ -590,8 +593,21 @@ namespace Flow.Launcher.ViewModel
                 {
                     if (result is DialogJumpResult dialogJumpResult)
                     {
-                        Win32Helper.SetForegroundWindow(DialogWindowHandle);
-                        _ = Task.Run(() => DialogJump.JumpToPathAsync(DialogWindowHandle, dialogJumpResult.DialogJumpPath));
+                        var dialogWindowHandle = DialogWindowHandle;
+                        Win32Helper.SetForegroundWindow(dialogWindowHandle);
+                        if (dialogJumpFromHotkey)
+                        {
+                            // Enter takes the dialog to the file's folder keeping the typed file name, Ctrl+Enter picks the file itself
+                            var fileBehaviour = index is null && GlobalHotkey.CheckModifiers().CtrlPressed
+                                ? DialogJumpFileResultBehaviours.FullPath
+                                : DialogJumpFileResultBehaviours.Directory;
+                            _ = Task.Run(() => DialogJump.JumpToPathAsync(dialogWindowHandle, dialogJumpResult.DialogJumpPath, fileBehaviour));
+                            hideWindow = true;
+                        }
+                        else
+                        {
+                            _ = Task.Run(() => DialogJump.JumpToPathAsync(dialogWindowHandle, dialogJumpResult.DialogJumpPath));
+                        }
                     }
                     else
                     {
@@ -608,8 +624,8 @@ namespace Flow.Launcher.ViewModel
                     }).ConfigureAwait(false);
                 }
 
-                // Only hide for query results (not Dialog Jump left-click mode)
-                if (!isDialogJumpLeftClick && hideWindow)
+                // Only hide for query results (not Dialog Jump left-click mode, whose window stays under the dialog)
+                if ((!isDialogJumpLeftClick || dialogJumpFromHotkey) && hideWindow)
                 {
                     Hide();
                 }
@@ -620,7 +636,10 @@ namespace Flow.Launcher.ViewModel
             }
 
             // Record user selected result for result ranking
-            _userSelectedRecord.Add(result);
+            if (!isFolderScopeSuggestion)
+            {
+                _userSelectedRecord.Add(result);
+            }
         }
 
         private static IReadOnlyList<Result> DeepCloneResults(IReadOnlyList<Result> results, bool isDialogJump, CancellationToken token = default)
@@ -1557,6 +1576,20 @@ namespace Flow.Launcher.ViewModel
                 return;
             }
 
+            var folderScope = _folderScope;
+            if (folderScope != null)
+            {
+                if (QueryText.StartsWith(folderScope.Prefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    query = BuildFolderScopeQuery(folderScope, QueryText);
+                }
+                else
+                {
+                    // The user edited or removed the folder prefix: back to a normal search
+                    _folderScope = folderScope = null;
+                }
+            }
+
             App.API.LogDebug(ClassName, $"Start query with ActionKeyword <{query.ActionKeyword}> and TrimmedQuery <{query.TrimmedQuery}>");
 
             var currentIsHomeQuery = query.IsHomeQuery;
@@ -1608,7 +1641,9 @@ namespace Flow.Launcher.ViewModel
                 }
                 else
                 {
-                    plugins = PluginManager.ValidPluginsForQuery(query, currentIsDialogJump);
+                    plugins = folderScope != null
+                        ? FolderScopePlugins()
+                        : PluginManager.ValidPluginsForQuery(query, currentIsDialogJump);
 
                     if (plugins.Count == 1)
                     {
@@ -1653,7 +1688,10 @@ namespace Flow.Launcher.ViewModel
                 Task[] tasks;
                 if (currentIsHomeQuery)
                 {
-                    if (ShouldClearExistingResultsForNonQuery(plugins))
+                    var folderPathTask = LaunchExplorer.GetFolderPathAsync();
+                    var mayHaveFolderScope = !folderPathTask.IsCompleted || folderPathTask.Result != null;
+
+                    if (!mayHaveFolderScope && ShouldClearExistingResultsForNonQuery(plugins))
                     {
                         // there are no update tasks and so we can directly return
                         ClearResults();
@@ -1664,7 +1702,7 @@ namespace Flow.Launcher.ViewModel
                     {
                         false => QueryTaskAsync(plugin, currentCancellationToken),
                         true => Task.CompletedTask
-                    }).ToArray();
+                    }).Append(FolderScopeSuggestionTaskAsync(folderPathTask, currentCancellationToken)).ToArray();
 
                     // Query history results for home page firstly so it will be put on top of the results
                     if (Settings.ShowHistoryResultsForHomePage)
@@ -1776,6 +1814,23 @@ namespace Flow.Launcher.ViewModel
                 App.API.LogDebug(ClassName, $"Update results for plugin <{plugin.Metadata.Name}>");
 
                 if (!_resultsUpdateChannelWriter.TryWrite(new ResultsForUpdate(resultsCopy, plugin.Metadata, query,
+                    token, reSelect)))
+                {
+                    App.API.LogError(ClassName, "Unable to add item to Result Update Queue");
+                }
+            }
+
+            async Task FolderScopeSuggestionTaskAsync(Task<string> folderPathTask, CancellationToken token)
+            {
+                var folderPath = await folderPathTask;
+
+                if (token.IsCancellationRequested) return;
+
+                IReadOnlyList<Result> results = folderPath == null
+                    ? _emptyResult
+                    : [CreateFolderScopeSuggestion(folderPath)];
+
+                if (!_resultsUpdateChannelWriter.TryWrite(new ResultsForUpdate(results, _folderScopeMetadata, query,
                     token, reSelect)))
                 {
                     App.API.LogError(ClassName, "Unable to add item to Result Update Queue");
@@ -1901,7 +1956,7 @@ namespace Flow.Launcher.ViewModel
             }
 
             // If the last and current query are not home query type, we need to check the action keyword
-            if (_lastQuery?.ActionKeyword != query?.ActionKeyword)
+            if (_lastQuery?.ActionKeyword != query?.ActionKeyword || _lastQuery?.SearchScope != query?.SearchScope)
             {
                 App.API.LogDebug(ClassName, $"Existing results should be cleared for query");
                 return true;
@@ -2106,7 +2161,18 @@ namespace Flow.Launcher.ViewModel
             HotkeyDiagnostics.Log($"toggle: status={MainWindowVisibilityStatus} hidePending={_hidePending} -> {(!MainWindowVisibilityStatus || _hidePending ? "Show" : "Hide")}");
             if (!MainWindowVisibilityStatus || _hidePending)
             {
+                // Remember what the user was looking at before Flow takes the foreground
+                var foregroundWindow = Win32Helper.GetForegroundWindow();
+                LaunchExplorer.Capture(foregroundWindow);
+                SetupDialogJumpFromHotkey(foregroundWindow);
+
                 Show();
+
+                // The home page was built while hidden, query it again to offer searching the explorer's folder
+                if (LaunchExplorer.IsCaptured && string.IsNullOrEmpty(QueryText))
+                {
+                    Query(false);
+                }
             }
             else
             {
@@ -2124,11 +2190,103 @@ namespace Flow.Launcher.ViewModel
 
         #endregion
 
+        #region Folder Scope
+
+        private const string ExplorerPluginId = "572be03c74c642baae319fc283e561a8";
+
+        private const string FolderScopeSeparator = " >> ";
+
+        private readonly PluginMetadata _folderScopeMetadata = new()
+        {
+            ID = "6E2B4F1A9C3D47E58A0B7C6D5E4F3A21", // ID is for identifying the update plugin in UpdateActionAsync
+            Priority = 0 // Priority is for calculating scores in UpdateResultView
+        };
+
+        // Marks the "Search in folder" suggestion so it is kept out of history and ranking records
+        private static readonly object FolderScopeSuggestionMarker = new();
+
+        private sealed record FolderScope(string Path, string Prefix);
+
+        // Set while the query text starts with "<folder> >> ", so only that folder is searched
+        private FolderScope _folderScope;
+
+        private Result CreateFolderScopeSuggestion(string folderPath)
+        {
+            var folderName = GetFolderDisplayName(folderPath);
+            return new Result
+            {
+                Title = Localize.searchInFolder(folderName),
+                SubTitle = Localize.searchInFolderSubtitle(),
+                IcoPath = folderPath,
+                Score = 1_000_000,
+                ContextData = FolderScopeSuggestionMarker,
+                Action = _ =>
+                {
+                    var scope = new FolderScope(folderPath, folderName + FolderScopeSeparator);
+                    _folderScope = scope;
+                    App.API.ChangeQuery(scope.Prefix);
+                    return false;
+                }
+            };
+        }
+
+        private static string GetFolderDisplayName(string folderPath)
+        {
+            var trimmed = folderPath.TrimEnd(System.IO.Path.DirectorySeparatorChar);
+            var name = System.IO.Path.GetFileName(trimmed);
+            // Drive roots have no file name, show "C:" instead
+            return string.IsNullOrEmpty(name) ? trimmed : name;
+        }
+
+        private static Query BuildFolderScopeQuery(FolderScope scope, string queryText)
+        {
+            var search = queryText[scope.Prefix.Length..].Trim();
+            return new Query
+            {
+                OriginalQuery = queryText,
+                TrimmedQuery = queryText.Trim(),
+                Search = search,
+                SearchTerms = search.Split(Plugin.Query.TermSeparator, StringSplitOptions.RemoveEmptyEntries),
+                ActionKeyword = string.Empty,
+                SearchScope = scope.Path
+            };
+        }
+
+        private static ICollection<PluginPair> FolderScopePlugins()
+        {
+            var explorer = PluginManager.GetPluginForId(ExplorerPluginId);
+            return explorer == null || explorer.Metadata.Disabled ? [] : [explorer];
+        }
+
+        #endregion
+
         #region Dialog Jump
 
         public nint DialogWindowHandle { get; private set; } = nint.Zero;
 
         private bool _isDialogJump = false;
+
+        // Dialog Jump started by the main hotkey over a file dialog, rather than by the window attached under it
+        private bool _dialogJumpFromHotkey = false;
+
+        private void SetupDialogJumpFromHotkey(nint foregroundWindow)
+        {
+            if (_isDialogJump || !Settings.EnableDialogJump || !DialogJump.IsDialogWindow(foregroundWindow)) return;
+
+            DialogWindowHandle = foregroundWindow;
+            _previousMainWindowVisibilityStatus = false;
+            _isDialogJump = true;
+            _dialogJumpFromHotkey = true;
+        }
+
+        private void ResetDialogJumpFromHotkey()
+        {
+            if (!_dialogJumpFromHotkey) return;
+
+            _dialogJumpFromHotkey = false;
+            _isDialogJump = false;
+            DialogWindowHandle = nint.Zero;
+        }
 
         private bool _previousMainWindowVisibilityStatus;
 
@@ -2141,7 +2299,7 @@ namespace Flow.Launcher.ViewModel
 
         public bool IsDialogJumpWindowUnderDialog()
         {
-            return _isDialogJump && DialogJump.DialogJumpWindowPosition == DialogJumpWindowPositions.UnderDialog;
+            return _isDialogJump && !_dialogJumpFromHotkey && DialogJump.DialogJumpWindowPosition == DialogJumpWindowPositions.UnderDialog;
         }
 
         public async Task SetupDialogJumpAsync(nint handle)
@@ -2248,6 +2406,7 @@ namespace Flow.Launcher.ViewModel
             // Reset the Dialog Jump state
             DialogWindowHandle = nint.Zero;
             _isDialogJump = false;
+            _dialogJumpFromHotkey = false;
 
             // If dialog window handle is not set, we should not reset the main window visibility
             if (dialogWindowHandle == nint.Zero) return;
@@ -2291,7 +2450,7 @@ namespace Flow.Launcher.ViewModel
 
         public void HideDialogJump()
         {
-            if (DialogWindowHandle != nint.Zero)
+            if (DialogWindowHandle != nint.Zero && !_dialogJumpFromHotkey)
             {
                 if (DialogJump.DialogJumpWindowPosition == DialogJumpWindowPositions.UnderDialog)
                 {
@@ -2413,6 +2572,12 @@ namespace Flow.Launcher.ViewModel
             _hidePending = true;
             HotkeyDiagnostics.Log($"hide begin (reset={reset})");
 
+            // What Flow was opened over only applies to that one invocation
+            var hadFolderScope = _folderScope != null;
+            _folderScope = null;
+            LaunchExplorer.Clear();
+            ResetDialogJumpFromHotkey();
+
             if (reset)
             {
                 lastHistoryIndex = 1;
@@ -2444,6 +2609,12 @@ namespace Flow.Launcher.ViewModel
                         if (Settings.LastQueryMode == LastQueryMode.ActionKeywordSelected)
                             LastQuerySelected = false;
                         break;
+                }
+
+                // A kept "<folder> >> ..." query would turn into a plain text search without its folder
+                if (hadFolderScope && Settings.LastQueryMode != LastQueryMode.Empty)
+                {
+                    await ChangeQueryTextAsync(string.Empty);
                 }
             }
 

@@ -26,6 +26,49 @@ namespace Flow.Launcher.Plugin.Explorer.Search.DirectoryInfo
                 token); // null will be passed as default
         }
 
+        private const int MaxRecursiveResults = 500;
+
+        /// <summary>
+        /// Finds files and folders under <paramref name="folderPath"/> whose name contains every word of the filter's name, in order,
+        /// and that have one of its extensions when it has any.
+        /// </summary>
+        internal static IEnumerable<SearchResult> RecursiveSearch(string folderPath, SearchFilter filter, CancellationToken token)
+        {
+            var criteria = "*" + string.Join('*', filter.Name.Split(' ', StringSplitOptions.RemoveEmptyEntries)) + "*";
+            var options = new EnumerationOptions
+            {
+                RecurseSubdirectories = true,
+                IgnoreInaccessible = true,
+                AttributesToSkip = FileAttributes.System
+            };
+
+            var count = 0;
+            // Enumerate everything and match here, so cancellation is checked on every entry and not only on matches
+            foreach (var fileSystemInfo in new System.IO.DirectoryInfo(folderPath).EnumerateFileSystemInfos("*", options))
+            {
+                if (token.IsCancellationRequested)
+                    yield break;
+
+                if (!System.IO.Enumeration.FileSystemName.MatchesSimpleExpression(criteria, fileSystemInfo.Name, ignoreCase: true))
+                    continue;
+
+                var result = new SearchResult
+                {
+                    FullPath = fileSystemInfo.FullName,
+                    Type = fileSystemInfo is FileInfo ? ResultType.File : ResultType.Folder,
+                    WindowsIndexed = false
+                };
+
+                if (!filter.Matches(result))
+                    continue;
+
+                if (count++ >= MaxRecursiveResults)
+                    yield break;
+
+                yield return result;
+            }
+        }
+
         public static string ConstructSearchCriteria(string search)
         {
             string incompleteName = "";

@@ -44,6 +44,8 @@
     <system:String x:Key="invalidFlowLauncherPluginFileFormat">Formato de archivo de plugin Flow Launcher inválido</system:String>
     <system:String x:Key="setAsTopMostInThisQuery">Establecer como superior en esta consulta</system:String>
     <system:String x:Key="cancelTopMostInThisQuery">Quitar como superior en esta consulta</system:String>
+    <system:String x:Key="searchInFolder">Buscar en «{0}»</system:String>
+    <system:String x:Key="searchInFolderSubtitle">Buscar solo en esta carpeta y sus subcarpetas</system:String>
     <system:String x:Key="executeQuery">Ejecutar consulta: {0}</system:String>
     <system:String x:Key="lastExecuteTime">Fecha de última ejecución: {0}</system:String>
     <system:String x:Key="iconTrayOpen">Abrir</system:String>

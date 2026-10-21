@@ -483,5 +483,50 @@ namespace Flow.Launcher.Test.Plugins
                     $"Expected '{path}' to be recognized as inside a home folder");
             }
         }
+
+        [TestCase("report", "report", "report !ext:log;tmp")]
+        [TestCase("report .docx", "report", "report ext:docx")]
+        [TestCase(".DOCX report .pdf", "report", "report ext:docx;pdf")]
+        [TestCase(".docx", "", "ext:docx")]
+        [TestCase("v1.2 notes", "v1.2 notes", "v1.2 notes !ext:log;tmp")]
+        [TestCase(". ..", ". ..", ". .. !ext:log;tmp")]
+        public void GivenSearchWithExtensionWords_WhenParsed_ThenEverythingSearchFiltersThoseExtensions(
+            string search, string expectedName, string expectedEverythingSearch)
+        {
+            var filter = SearchFilter.Parse(search);
+
+            ClassicAssert.AreEqual(expectedName, filter.Name);
+            ClassicAssert.AreEqual(expectedEverythingSearch, filter.ToEverythingSearch(["log", "tmp"]));
+        }
+
+        [Test]
+        public void GivenWildcardExcludedExtension_WhenBuildingEverythingSearch_ThenItBecomesAFileNamePattern()
+        {
+            var filter = SearchFilter.Parse("report");
+
+            ClassicAssert.AreEqual("report !ext:log !*.pixpin*", filter.ToEverythingSearch(["log", "pixpin*"]));
+        }
+
+        [TestCase("pixpin-lectura", true)]
+        [TestCase("PIXPIN2D", true)]
+        [TestCase("log", true)]
+        [TestCase("docx", false)]
+        [TestCase("mypixpin", false)]
+        public void GivenExcludedExtensionsWithWildcard_WhenCheckingExtension_ThenWildcardMatchesPrefix(string extension, bool expected)
+        {
+            ClassicAssert.AreEqual(expected, SearchFilter.IsExcludedExtension(extension, ["log", "pixpin*"]));
+        }
+
+        [TestCase("report .docx", @"C:\Docs\Report.DOCX", ResultType.File, true)]
+        [TestCase("report .docx", @"C:\Docs\Report.pdf", ResultType.File, false)]
+        [TestCase("report .docx", @"C:\Docs\Report.docx", ResultType.Folder, false)]
+        [TestCase("report", @"C:\Docs\Report", ResultType.Folder, true)]
+        public void GivenSearchFilter_WhenMatchingResult_ThenOnlyTypedExtensionsPass(
+            string search, string path, ResultType type, bool expected)
+        {
+            var filter = SearchFilter.Parse(search);
+
+            ClassicAssert.AreEqual(expected, filter.Matches(new SearchResult { FullPath = path, Type = type }));
+        }
     }
 }

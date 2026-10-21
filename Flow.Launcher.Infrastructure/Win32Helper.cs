@@ -885,6 +885,19 @@ namespace Flow.Launcher.Infrastructure
             return Path.GetFileName(GetProcessPathFromHwnd(hWnd));
         }
 
+        public static unsafe string GetWindowClassName(nint handle)
+        {
+            const int capacity = 256;
+            Span<char> buffer = stackalloc char[capacity];
+            int validLength;
+            fixed (char* pBuffer = buffer)
+            {
+                validLength = PInvoke.GetClassName(new(handle), pBuffer, capacity);
+            }
+
+            return buffer[..validLength].ToString();
+        }
+
         /// <summary>
         /// Describes the current foreground window as "process.exe [WindowClass]", for diagnostics
         /// </summary>

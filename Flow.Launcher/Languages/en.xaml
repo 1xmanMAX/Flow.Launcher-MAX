@@ -46,6 +46,8 @@
     <system:String x:Key="invalidFlowLauncherPluginFileFormat">Invalid Flow Launcher plugin file format</system:String>
     <system:String x:Key="setAsTopMostInThisQuery">Set as topmost in this query</system:String>
     <system:String x:Key="cancelTopMostInThisQuery">Cancel topmost in this query</system:String>
+    <system:String x:Key="searchInFolder">Search in "{0}"</system:String>
+    <system:String x:Key="searchInFolderSubtitle">Only search this folder and its subfolders</system:String>
     <system:String x:Key="executeQuery">Execute query: {0}</system:String>
     <system:String x:Key="lastExecuteTime">Last execution time: {0}</system:String>
     <system:String x:Key="iconTrayOpen">Open</system:String>
