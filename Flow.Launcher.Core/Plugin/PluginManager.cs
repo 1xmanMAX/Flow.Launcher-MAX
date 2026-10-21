@@ -29,6 +29,9 @@ namespace Flow.Launcher.Core.Plugin
         private static readonly ConcurrentDictionary<string, PluginPair> _allLoadedPlugins = [];
         private static readonly ConcurrentDictionary<string, PluginPair> _allInitializedPlugins = [];
         private static readonly ConcurrentDictionary<string, PluginPair> _initFailedPlugins = [];
+        // Disabled at startup: loaded but not initialized until the user enables them
+        private static readonly ConcurrentDictionary<string, PluginPair> _deferredPlugins = [];
+        private static IResultUpdateRegister _resultUpdateRegister;
         private static readonly ConcurrentDictionary<string, PluginPair> _globalPlugins = [];
         private static readonly ConcurrentDictionary<string, List<PluginPair>> _nonGlobalPlugins = [];
 
@@ -255,6 +258,8 @@ namespace Flow.Launcher.Core.Plugin
         /// <returns>return the list of failed to init plugins or null for none</returns>
         public static async Task InitializePluginsAsync(IResultUpdateRegister register)
         {
+            _resultUpdateRegister = register;
+
             var initTasks = _allLoadedPlugins.Select(x => Task.Run(async () =>
             {
                 var pair = x.Value;
@@ -262,49 +267,16 @@ namespace Flow.Launcher.Core.Plugin
                 // Register plugin action keywords so that plugins can be queried in results
                 RegisterPluginActionKeywords(pair);
 
-                try
+                // Disabled plugins are never queried, and some take seconds to initialize,
+                // so they wait until the user enables them
+                if (pair.Metadata.Disabled)
                 {
-                    var milliseconds = await PublicApi.Instance.StopwatchLogDebugAsync(ClassName, $"Init method time cost for <{pair.Metadata.Name}>",
-                        () => pair.Plugin.InitAsync(new PluginInitContext(pair.Metadata, PublicApi.Instance)));
-
-                    pair.Metadata.InitTime += milliseconds;
-                    PublicApi.Instance.LogInfo(ClassName,
-                        $"Total init cost for <{pair.Metadata.Name}> is <{pair.Metadata.InitTime}ms>");
-                }
-                catch (Exception e)
-                {
-                    PublicApi.Instance.LogException(ClassName, $"Fail to Init plugin: {pair.Metadata.Name}", e);
-                    if (pair.Metadata.Disabled && pair.Metadata.HomeDisabled)
-                    {
-                        // If this plugin is already disabled, do not show error message again
-                        // Or else it will be shown every time
-                        PublicApi.Instance.LogDebug(ClassName, $"Skipped init for <{pair.Metadata.Name}> due to error");
-                    }
-                    else
-                    {
-                        pair.Metadata.Disabled = true;
-                        pair.Metadata.HomeDisabled = true;
-                        PublicApi.Instance.LogDebug(ClassName, $"Disable plugin <{pair.Metadata.Name}> because init failed");
-                    }
-
-                    // Even if the plugin cannot be initialized, we still need to add it in all plugin list so that
-                    // we can remove the plugin from Plugin or Store page or Plugin Manager plugin.
-                    _allInitializedPlugins.TryAdd(pair.Metadata.ID, pair);
-                    _initFailedPlugins.TryAdd(pair.Metadata.ID, pair);
+                    _deferredPlugins.TryAdd(pair.Metadata.ID, pair);
+                    PublicApi.Instance.LogInfo(ClassName, $"Deferred init for disabled plugin <{pair.Metadata.Name}>");
                     return;
                 }
 
-                // Register ResultsUpdated event so that plugin query can use results updated interface
-                register.RegisterResultsUpdatedEvent(pair);
-
-                // Update plugin metadata translation after the plugin is initialized with IPublicAPI instance
-                Internationalization.UpdatePluginMetadataTranslation(pair);
-
-                // Add plugin to Dialog Jump plugin list after the plugin is initialized
-                DialogJump.InitializeDialogJumpPlugin(pair);
-
-                // Add plugin to lists after the plugin is initialized
-                AddPluginToLists(pair);
+                await InitializePluginAsync(pair, register);
             }));
 
             await Task.WhenAll(initTasks);
@@ -315,6 +287,80 @@ namespace Flow.Launcher.Core.Plugin
                 PublicApi.Instance.ShowMsg(
                     Localize.failedToInitializePluginsTitle(),
                     Localize.failedToInitializePluginsMessage(failed),
+                    "",
+                    false
+                );
+            }
+        }
+
+        private static async Task<bool> InitializePluginAsync(PluginPair pair, IResultUpdateRegister register)
+        {
+            try
+            {
+                var milliseconds = await PublicApi.Instance.StopwatchLogDebugAsync(ClassName, $"Init method time cost for <{pair.Metadata.Name}>",
+                    () => pair.Plugin.InitAsync(new PluginInitContext(pair.Metadata, PublicApi.Instance)));
+
+                pair.Metadata.InitTime += milliseconds;
+                PublicApi.Instance.LogInfo(ClassName,
+                    $"Total init cost for <{pair.Metadata.Name}> is <{pair.Metadata.InitTime}ms>");
+            }
+            catch (Exception e)
+            {
+                PublicApi.Instance.LogException(ClassName, $"Fail to Init plugin: {pair.Metadata.Name}", e);
+                if (pair.Metadata.Disabled && pair.Metadata.HomeDisabled)
+                {
+                    // If this plugin is already disabled, do not show error message again
+                    // Or else it will be shown every time
+                    PublicApi.Instance.LogDebug(ClassName, $"Skipped init for <{pair.Metadata.Name}> due to error");
+                }
+                else
+                {
+                    pair.Metadata.Disabled = true;
+                    pair.Metadata.HomeDisabled = true;
+                    PublicApi.Instance.LogDebug(ClassName, $"Disable plugin <{pair.Metadata.Name}> because init failed");
+                }
+
+                // Even if the plugin cannot be initialized, we still need to add it in all plugin list so that
+                // we can remove the plugin from Plugin or Store page or Plugin Manager plugin.
+                _allInitializedPlugins.TryAdd(pair.Metadata.ID, pair);
+                _initFailedPlugins.TryAdd(pair.Metadata.ID, pair);
+                return false;
+            }
+
+            // Register ResultsUpdated event so that plugin query can use results updated interface
+            register.RegisterResultsUpdatedEvent(pair);
+
+            // Update plugin metadata translation after the plugin is initialized with IPublicAPI instance
+            Internationalization.UpdatePluginMetadataTranslation(pair);
+
+            // Add plugin to Dialog Jump plugin list after the plugin is initialized
+            DialogJump.InitializeDialogJumpPlugin(pair);
+
+            // Add plugin to lists after the plugin is initialized
+            AddPluginToLists(pair);
+            return true;
+        }
+
+        /// <summary>
+        /// Whether the plugin was disabled at startup and has not been initialized yet.
+        /// </summary>
+        public static bool IsDeferred(string id) => _deferredPlugins.ContainsKey(id);
+
+        /// <summary>
+        /// Initializes a plugin skipped at startup because it was disabled, once the user enables it.
+        /// Does nothing for any other plugin.
+        /// </summary>
+        public static async Task InitializeDeferredPluginAsync(string id)
+        {
+            if (!_deferredPlugins.TryRemove(id, out var pair))
+                return;
+
+            // Off the caller's thread: this runs from a settings toggle and some plugins block for seconds in init
+            if (!await Task.Run(() => InitializePluginAsync(pair, _resultUpdateRegister)))
+            {
+                PublicApi.Instance.ShowMsg(
+                    Localize.failedToInitializePluginsTitle(),
+                    Localize.failedToInitializePluginsMessage(pair.Metadata.Name),
                     "",
                     false
                 );
@@ -882,7 +928,7 @@ namespace Flow.Launcher.Core.Plugin
                 return true; // If version is not valid, we assume it is lesser than any existing version
 
             // Get all plugins even if initialization failed so that we can check if the plugin with the same ID exists
-            return GetAllInitializedPlugins(includeFailed: true).Any(x => x.Metadata.ID == metadata.ID
+            return GetAllInitializedPlugins(includeFailed: true).Concat(_deferredPlugins.Values).Any(x => x.Metadata.ID == metadata.ID
                 && Version.TryParse(x.Metadata.Version, out var version)
                 && newVersion <= version);
         }
@@ -1118,6 +1164,7 @@ namespace Flow.Launcher.Core.Plugin
                 }
                 {
                     _allInitializedPlugins.TryRemove(plugin.ID, out var _);
+                    _deferredPlugins.TryRemove(plugin.ID, out var _);
                 }
                 {
                     _initFailedPlugins.TryRemove(plugin.ID, out var _);

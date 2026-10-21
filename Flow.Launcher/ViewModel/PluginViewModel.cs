@@ -69,7 +69,21 @@ namespace Flow.Launcher.ViewModel
             {
                 PluginPair.Metadata.Disabled = !value;
                 PluginSettingsObject.Disabled = !value;
+
+                if (value && PluginManager.IsDeferred(PluginPair.Metadata.ID))
+                    _ = InitializeDeferredPluginAsync();
             }
+        }
+
+        private async Task InitializeDeferredPluginAsync()
+        {
+            await PluginManager.InitializeDeferredPluginAsync(PluginPair.Metadata.ID);
+
+            // The setting panel needs an initialized plugin, show it now
+            _settingControl = null;
+            OnPropertyChanged(nameof(HasSettingControl));
+            OnPropertyChanged(nameof(SettingControl));
+            OnPropertyChanged(nameof(InitAndQueryTime));
         }
 
         public bool PluginHomeState
@@ -161,6 +175,8 @@ namespace Flow.Launcher.ViewModel
         public bool HasSettingControl =>
             // Here we do not check if the plugin is initialized successfully
             // So we can let users change settings for initializing or initialization failed plugins
+            // Disabled plugins skipped at startup get theirs once enabled, since some panels need init (JsonRPC settings)
+            !PluginManager.IsDeferred(PluginPair.Metadata.ID) &&
             PluginPair.Plugin is ISettingProvider &&
             (PluginPair.Plugin is not JsonRPCPluginBase jsonRPCPluginBase || // Is not JsonRPC plugin
             jsonRPCPluginBase.NeedCreateSettingPanel()); // Is JsonRPC plugin and need to create setting panel
