@@ -394,12 +394,19 @@ namespace Flow.Launcher.Infrastructure
             }
             else
             {
-                using var src = new HwndSource(new HwndSourceParameters());
-                matrix = src.CompositionTarget.TransformFromDevice;
+                matrix = DefaultTransformFromDevice.Value;
             }
 
             return new Point((int)(matrix.M11 * unitX), (int)(matrix.M22 * unitY));
         }
+
+        // Only used before a window has its own source, i.e. while the main window is set up at startup.
+        // Creating a throwaway HwndSource costs ~100 ms and positioning the window asked for 16 of them.
+        private static readonly Lazy<Matrix> DefaultTransformFromDevice = new(() =>
+        {
+            using var src = new HwndSource(new HwndSourceParameters());
+            return src.CompositionTarget.TransformFromDevice;
+        });
 
         #endregion
 

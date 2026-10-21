@@ -294,17 +294,21 @@ namespace Flow.Launcher
             // but the user still has the setting set
             if (_settings.StartFlowLauncherOnSystemStartup)
             {
-                try
+                // Reading the logon task through Task Scheduler takes about a second, so keep it off the UI thread
+                _ = Task.Run(() =>
                 {
-                    Helper.AutoStartup.CheckIsEnabled(_settings.UseLogonTaskForStartup);
-                }
-                catch (Exception e)
-                {
-                    // but if it fails (permissions, etc) then don't keep retrying
-                    // this also gives the user a visual indication in the Settings widget
-                    _settings.StartFlowLauncherOnSystemStartup = false;
-                    API.ShowMsgError(Localize.setAutoStartFailed(), e.Message);
-                }
+                    try
+                    {
+                        Helper.AutoStartup.CheckIsEnabled(_settings.UseLogonTaskForStartup);
+                    }
+                    catch (Exception e)
+                    {
+                        // but if it fails (permissions, etc) then don't keep retrying
+                        // this also gives the user a visual indication in the Settings widget
+                        _settings.StartFlowLauncherOnSystemStartup = false;
+                        API.ShowMsgError(Localize.setAutoStartFailed(), e.Message);
+                    }
+                });
             }
         }
 
