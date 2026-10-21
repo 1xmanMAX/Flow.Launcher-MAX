@@ -1,10 +1,13 @@
 ﻿using System;
+using System.Windows;
+using System.Windows.Threading;
 using ChefKeys;
 using CommunityToolkit.Mvvm.DependencyInjection;
 using Flow.Launcher.Infrastructure.Hotkey;
 using Flow.Launcher.Infrastructure.DialogJump;
 using Flow.Launcher.Infrastructure.UserSettings;
 using Flow.Launcher.ViewModel;
+using Microsoft.Win32;
 using NHotkey;
 using NHotkey.Wpf;
 
@@ -22,13 +25,86 @@ internal static class HotKeyMapper
         _mainViewModel = Ioc.Default.GetRequiredService<MainViewModel>();
         _settings = Ioc.Default.GetService<Settings>();
 
-        SetHotkey(_settings.Hotkey, OnToggleHotkey);
+        RegisterToggleHotkey("startup");
         if (_settings.EnableDialogJump)
         {
             SetHotkey(_settings.DialogJumpHotkey, DialogJump.OnToggleHotkey);
         }
         LoadCustomPluginHotkey();
+
+        // Take the hotkey again after sleep, lock and remote sessions, where Windows or another program may have taken it
+        SystemEvents.PowerModeChanged += (_, e) =>
+        {
+            if (e.Mode == PowerModes.Resume)
+                RefreshToggleHotkey($"power {e.Mode}");
+        };
+        SystemEvents.SessionSwitch += (_, e) =>
+        {
+            if (e.Reason is SessionSwitchReason.SessionUnlock or SessionSwitchReason.SessionLogon
+                or SessionSwitchReason.ConsoleConnect or SessionSwitchReason.RemoteConnect)
+                RefreshToggleHotkey($"session {e.Reason}");
+        };
     }
+
+    #region Toggle hotkey guard
+
+    private static readonly TimeSpan ToggleHotkeyRetryInterval = TimeSpan.FromSeconds(5);
+    private static DispatcherTimer _toggleHotkeyRetryTimer;
+    private static bool _toggleHotkeyFailureShown;
+
+    private static void RefreshToggleHotkey(string reason)
+    {
+        // SystemEvents are raised on their own thread, the hotkey window belongs to the UI thread
+        Application.Current?.Dispatcher.InvokeAsync(() => RegisterToggleHotkey(reason));
+    }
+
+    /// <summary>
+    /// Registers the toggle hotkey. When another program holds it, keeps retrying quietly instead of giving up,
+    /// so Flow takes it back as soon as it is released.
+    /// </summary>
+    private static void RegisterToggleHotkey(string reason)
+    {
+        var hotkey = new HotkeyModel(_settings.Hotkey);
+        var hotkeyStr = hotkey.ToString();
+        if (string.IsNullOrEmpty(hotkeyStr))
+            return;
+
+        if (hotkeyStr is "LWin" or "RWin")
+        {
+            // A keyboard hook, not a registration another program can take
+            if (reason == "startup")
+                SetWithChefKeys(hotkeyStr);
+            return;
+        }
+
+        try
+        {
+            HotkeyManager.Current.AddOrReplace(hotkeyStr, hotkey.CharKey, hotkey.ModifierKeys, OnToggleHotkey);
+            HotkeyDiagnostics.Log($"toggle hotkey {hotkeyStr} registered ({reason})");
+            _toggleHotkeyRetryTimer?.Stop();
+            _toggleHotkeyFailureShown = false;
+        }
+        catch (Exception e)
+        {
+            HotkeyDiagnostics.Log($"toggle hotkey {hotkeyStr} FAILED ({reason}): {e.Message}");
+            App.API.LogError(ClassName, $"Failed to register toggle hotkey {hotkeyStr} ({reason}): {e.Message}");
+
+            if (!_toggleHotkeyFailureShown)
+            {
+                _toggleHotkeyFailureShown = true;
+                App.API.ShowMsg(Localize.registerHotkeyFailed(hotkeyStr), Localize.hotkeyRetrying());
+            }
+
+            if (_toggleHotkeyRetryTimer == null)
+            {
+                _toggleHotkeyRetryTimer = new DispatcherTimer { Interval = ToggleHotkeyRetryInterval };
+                _toggleHotkeyRetryTimer.Tick += (_, _) => RegisterToggleHotkey("retry");
+            }
+            _toggleHotkeyRetryTimer.Start();
+        }
+    }
+
+    #endregion
 
     internal static void OnToggleHotkey(object sender, HotkeyEventArgs args)
     {

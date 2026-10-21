@@ -192,7 +192,7 @@ namespace Flow.Launcher.ViewModel
             History.PropertyChanged += OnHistoryPropertyChanged;
 
             RegisterViewUpdate();
-            _ = RegisterClockAndDateUpdateAsync();
+            StartClockAndDateUpdates();
 
             ThemeManager.Current.ActualApplicationThemeChanged += ThemeManager_ActualApplicationThemeChanged;
         }
@@ -315,17 +315,42 @@ namespace Flow.Launcher.ViewModel
             };
         }
 
-        private async Task RegisterClockAndDateUpdateAsync()
+        private int _clockUpdatesRunning;
+
+        /// <summary>
+        /// Ticks the clock and date every second while the window is visible. The loop stops once the window
+        /// is hidden, since nobody sees the clock then, and Show() starts it again.
+        /// </summary>
+        private void StartClockAndDateUpdates()
         {
-            var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
-            // ReSharper disable once MethodSupportsCancellation
-            while (await timer.WaitForNextTickAsync().ConfigureAwait(false))
+            UpdateClockAndDate();
+
+            if (Interlocked.Exchange(ref _clockUpdatesRunning, 1) == 1)
+                return;
+
+            _ = Task.Run(async () =>
             {
-                if (Settings.UseClock)
-                    ClockText = DateTime.Now.ToString(Settings.TimeFormat, CultureInfo.CurrentCulture);
-                if (Settings.UseDate)
-                    DateText = DateTime.Now.ToString(Settings.DateFormat, CultureInfo.CurrentCulture);
-            }
+                using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+                // ReSharper disable once MethodSupportsCancellation
+                while (MainWindowVisibilityStatus && await timer.WaitForNextTickAsync().ConfigureAwait(false))
+                {
+                    UpdateClockAndDate();
+                }
+
+                Interlocked.Exchange(ref _clockUpdatesRunning, 0);
+
+                // The window may have been shown again while the loop was exiting
+                if (MainWindowVisibilityStatus)
+                    StartClockAndDateUpdates();
+            });
+        }
+
+        private void UpdateClockAndDate()
+        {
+            if (Settings.UseClock)
+                ClockText = DateTime.Now.ToString(Settings.TimeFormat, CultureInfo.CurrentCulture);
+            if (Settings.UseDate)
+                DateText = DateTime.Now.ToString(Settings.DateFormat, CultureInfo.CurrentCulture);
         }
 
         [RelayCommand]
@@ -2550,6 +2575,7 @@ namespace Flow.Launcher.ViewModel
             {
                 MainWindowVisibilityStatus = true;
             }
+            StartClockAndDateUpdates();
             VisibilityChanged?.Invoke(this, new VisibilityChangedEventArgs { IsVisible = true });
 
             // Switch keyboard layout

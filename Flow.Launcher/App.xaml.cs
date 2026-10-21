@@ -217,8 +217,9 @@ namespace Flow.Launcher
 
                 Http.Proxy = _settings.Proxy;
 
-                // Initialize plugin manifest before initializing plugins so that they can use the manifest instantly
-                await API.UpdatePluginManifestAsync();
+                // Fetch the plugin manifest in the background: it can take 10+ seconds on a slow network, and waiting for it
+                // here delays the main window and the hotkey registration. Its users fetch or wait for it themselves.
+                _ = API.UpdatePluginManifestAsync();
 
                 await imageLoaderTask;
 
@@ -316,6 +317,8 @@ namespace Flow.Launcher
                 {
                     // check update every 5 hours
                     var timer = new PeriodicTimer(TimeSpan.FromHours(5));
+                    // Leave the startup to the window and the plugins, the first check can wait a few minutes
+                    await Task.Delay(TimeSpan.FromMinutes(5));
                     await Ioc.Default.GetRequiredService<Updater>().UpdateAppAsync();
 
                     while (await timer.WaitForNextTickAsync())
