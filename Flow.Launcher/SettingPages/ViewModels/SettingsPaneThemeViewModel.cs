@@ -153,7 +153,7 @@ public partial class SettingsPaneThemeViewModel : BaseModel
         set
         {
             Settings.CodeHighlightTheme = value;
-            PreviewMarkdownScrollViewer.ApplyCodeHighlightTheme(
+            Flow.Launcher.Resources.Controls.CodeHighlightTheme.Apply(
                 value, ThemeManager.Current.ActualApplicationTheme == ApplicationTheme.Dark);
             _ = _theme.RefreshFrameAsync();
         }

@@ -521,19 +521,16 @@
                                         TextAlignment="Center"
                                         TextWrapping="Wrap" />
                                 </Grid>
-                                <controls:PreviewMarkdownScrollViewer
+                                <!--  The markdown viewer is created in code the first time it is shown, so its libraries are not loaded at startup  -->
+                                <ContentControl
+                                    x:Name="MarkdownPreviewHost"
                                     Grid.Row="0"
                                     Grid.RowSpan="2"
                                     Margin="8 10 0 10"
-                                    HorizontalScrollBarVisibility="Disabled"
-                                    Markdown="{Binding PreviewDescription}"
-                                    MarkdownStyle="{DynamicResource PreviewMarkdownStyle}"
-                                    VerticalScrollBarVisibility="Auto"
-                                    Visibility="{Binding IsMarkdownPreview, Converter={StaticResource BoolToVisibilityConverter}}">
-                                    <FrameworkElement.Resources>
-                                        <Style TargetType="{x:Type ScrollBar}" BasedOn="{StaticResource BaseScrollBarStyle}" />
-                                    </FrameworkElement.Resources>
-                                </controls:PreviewMarkdownScrollViewer>
+                                    Focusable="False"
+                                    IsTabStop="False"
+                                    IsVisibleChanged="MarkdownPreviewHost_IsVisibleChanged"
+                                    Visibility="{Binding IsMarkdownPreview, Converter={StaticResource BoolToVisibilityConverter}}" />
                                 <StackPanel Grid.Row="1" Visibility="{Binding IsMarkdownPreview, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Inverted}">
                                     <StackPanel.Style>
                                         <Style TargetType="{x:Type StackPanel}">

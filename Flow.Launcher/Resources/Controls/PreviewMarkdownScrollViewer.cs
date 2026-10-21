@@ -20,23 +20,10 @@ public class PreviewMarkdownScrollViewer : MarkdownScrollViewer
     private static readonly string[] EmphasisMarkers = ["**", "__", "*", "_"];
     private const double MinimumDocumentPageWidth = 64;
 
-    internal static CodeHighlightTheme ActiveTheme { get; private set; } = CodeHighlightTheme.VSCodeDarkPlus;
+    private static CodeHighlightTheme ActiveTheme => CodeHighlightTheme.Active;
 
     // Track in-flight BeginInvoke so rapid Markdown changes don't pile up traversals.
     private DispatcherOperation _pendingFixOperation;
-
-    /// <summary>
-    /// Name of the code-highlight theme currently applied to embedded code blocks.
-    /// </summary>
-    public static string ActiveThemeName => ActiveTheme.Name;
-
-    /// <summary>
-    /// Applies the configured code-highlight theme to subsequently rendered code blocks.
-    /// </summary>
-    /// <param name="setting">The persisted Settings.CodeHighlightTheme value (e.g. "Auto", "OneDark").</param>
-    /// <param name="isDark">Whether the app currently renders with a dark colour scheme.</param>
-    public static void ApplyCodeHighlightTheme(string setting, bool isDark)
-        => ActiveTheme = CodeHighlightTheme.Resolve(setting, isDark);
 
     /// <summary>
     /// Returns true when <paramref name="source"/> (typically the focused element of a routed key

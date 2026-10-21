@@ -2,7 +2,7 @@ using System.Windows.Media;
 
 namespace Flow.Launcher.Resources.Controls;
 
-internal sealed record CodeHighlightTheme(
+public sealed record CodeHighlightTheme(
     string Name,
     Color DefaultForeground,
     Color Comment,
@@ -157,4 +157,16 @@ internal sealed record CodeHighlightTheme(
         nameof(OneDark) => OneDark,
         _ => isDark ? VSCodeDarkPlus : VSCodeLight,
     };
+
+    private static CodeHighlightTheme _active;
+
+    /// <summary>
+    /// Theme applied to code blocks in the markdown preview. It lives here and not on the preview control,
+    /// so setting it at startup does not load the markdown and code editor libraries.
+    /// </summary>
+    public static CodeHighlightTheme Active => _active ?? VSCodeDarkPlus;
+
+    /// <param name="setting">The persisted Settings.CodeHighlightTheme value (e.g. "Auto", "OneDark").</param>
+    /// <param name="isDark">Whether the app currently renders with a dark colour scheme.</param>
+    public static void Apply(string setting, bool isDark) => _active = Resolve(setting, isDark);
 }

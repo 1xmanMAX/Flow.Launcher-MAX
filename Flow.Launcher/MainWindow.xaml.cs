@@ -2,6 +2,7 @@
 using System.ComponentModel;
 using System.Linq;
 using System.Media;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -119,7 +120,7 @@ namespace Flow.Launcher
         private void ViewModel_ActualApplicationThemeChanged(object sender, ActualApplicationThemeChangedEventArgs args)
         {
             // Keep the markdown preview's "Auto" code-highlight theme in step with the app colour scheme.
-            PreviewMarkdownScrollViewer.ApplyCodeHighlightTheme(_settings.CodeHighlightTheme, args.IsDark);
+            CodeHighlightTheme.Apply(_settings.CodeHighlightTheme, args.IsDark);
             _ = _theme.RefreshFrameAsync();
         }
 
@@ -212,7 +213,7 @@ namespace Flow.Launcher
 
             // Initialize the markdown preview code-highlight theme from settings, resolving "Auto"
             // against the colour scheme just applied above.
-            PreviewMarkdownScrollViewer.ApplyCodeHighlightTheme(
+            CodeHighlightTheme.Apply(
                 _settings.CodeHighlightTheme,
                 ThemeManager.Current.ActualApplicationTheme == ApplicationTheme.Dark);
 
@@ -512,13 +513,44 @@ namespace Flow.Launcher
             }
         }
 
+        private void MarkdownPreviewHost_IsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+        {
+            if (e.NewValue is true && MarkdownPreviewHost.Content == null)
+                CreateMarkdownPreview();
+        }
+
+        // Kept out of the callers so that compiling them does not load MdXaml and AvalonEdit
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private void CreateMarkdownPreview()
+        {
+            var viewer = new PreviewMarkdownScrollViewer
+            {
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+            };
+            viewer.SetBinding(MdXaml.MarkdownScrollViewer.MarkdownProperty, new Binding(nameof(ResultViewModel.PreviewDescription)));
+            viewer.SetResourceReference(MdXaml.MarkdownScrollViewer.MarkdownStyleProperty, "PreviewMarkdownStyle");
+            viewer.Resources.MergedDictionaries.Add(new ResourceDictionary
+            {
+                Source = new Uri("pack://application:,,,/Resources/MarkdownCodeBlockStyle.xaml")
+            });
+            viewer.Resources.Add(typeof(System.Windows.Controls.Primitives.ScrollBar), new Style(typeof(System.Windows.Controls.Primitives.ScrollBar), (Style)FindResource("BaseScrollBarStyle")));
+            MarkdownPreviewHost.Content = viewer;
+        }
+
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool IsMarkdownCodeBlockNavigation(KeyEventArgs e)
+        {
+            return PreviewMarkdownScrollViewer.IsCodeBlockFocused(e.OriginalSource)
+                && PreviewMarkdownScrollViewer.IsCodeBlockNavigationKey(e.Key);
+        }
+
         private void OnKeyDown(object sender, KeyEventArgs e)
         {
             // When a code-block in the markdown preview is focused
             // Let it capture input of text navigation keys (arrows, page, home/end) instead
             // Non-navigation keys pass through normally.
-            if (PreviewMarkdownScrollViewer.IsCodeBlockFocused(e.OriginalSource)
-                && PreviewMarkdownScrollViewer.IsCodeBlockNavigationKey(e.Key))
+            if (MarkdownPreviewHost.Content != null && IsMarkdownCodeBlockNavigation(e))
             {
                 return;
             }

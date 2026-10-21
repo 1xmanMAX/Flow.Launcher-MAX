@@ -8,18 +8,14 @@ namespace Flow.Launcher.Test
     [TestFixture]
     internal class CodeHighlightThemeTest
     {
-        private static readonly PropertyInfo ActiveThemeProperty =
-            typeof(PreviewMarkdownScrollViewer).GetProperty("ActiveTheme",
-                BindingFlags.Static | BindingFlags.NonPublic);
-
         private static readonly FieldInfo ActiveThemeBackingField =
-            typeof(PreviewMarkdownScrollViewer).GetField("<ActiveTheme>k__BackingField",
+            typeof(CodeHighlightTheme).GetField("_active",
                 BindingFlags.Static | BindingFlags.NonPublic);
 
         private object _savedTheme;
 
         [SetUp]
-        public void SetUp() => _savedTheme = ActiveThemeProperty.GetValue(null);
+        public void SetUp() => _savedTheme = ActiveThemeBackingField.GetValue(null);
 
         [TearDown]
         public void TearDown() => ActiveThemeBackingField.SetValue(null, _savedTheme);
@@ -27,41 +23,41 @@ namespace Flow.Launcher.Test
         [Test]
         public void GivenAutoSetting_WhenAppIsDark_ThenActiveThemeIsADarkTheme()
         {
-            PreviewMarkdownScrollViewer.ApplyCodeHighlightTheme("Auto", isDark: true);
+            CodeHighlightTheme.Apply("Auto", isDark: true);
 
-            ClassicAssert.AreEqual("VS Code Dark+", PreviewMarkdownScrollViewer.ActiveThemeName);
+            ClassicAssert.AreEqual("VS Code Dark+", CodeHighlightTheme.Active.Name);
         }
 
         [Test]
         public void GivenAutoSetting_WhenAppIsLight_ThenActiveThemeIsALightTheme()
         {
-            PreviewMarkdownScrollViewer.ApplyCodeHighlightTheme("Auto", isDark: false);
+            CodeHighlightTheme.Apply("Auto", isDark: false);
 
-            ClassicAssert.AreEqual("VS Code Light", PreviewMarkdownScrollViewer.ActiveThemeName);
+            ClassicAssert.AreEqual("VS Code Light", CodeHighlightTheme.Active.Name);
         }
 
         [Test]
         public void GivenExplicitTheme_WhenApplied_ThenActiveThemeMatchesRegardlessOfAppScheme()
         {
-            PreviewMarkdownScrollViewer.ApplyCodeHighlightTheme("OneDark", isDark: false);
+            CodeHighlightTheme.Apply("OneDark", isDark: false);
 
-            ClassicAssert.AreEqual("One Dark", PreviewMarkdownScrollViewer.ActiveThemeName);
+            ClassicAssert.AreEqual("One Dark", CodeHighlightTheme.Active.Name);
         }
 
         [Test]
         public void GivenEmptySetting_WhenApplied_ThenFallsBackToAutoBehaviour()
         {
-            PreviewMarkdownScrollViewer.ApplyCodeHighlightTheme("", isDark: false);
+            CodeHighlightTheme.Apply("", isDark: false);
 
-            ClassicAssert.AreEqual("VS Code Light", PreviewMarkdownScrollViewer.ActiveThemeName);
+            ClassicAssert.AreEqual("VS Code Light", CodeHighlightTheme.Active.Name);
         }
 
         [Test]
         public void GivenUnrecognisedSetting_WhenApplied_ThenFallsBackToAutoBehaviour()
         {
-            PreviewMarkdownScrollViewer.ApplyCodeHighlightTheme("BogusTheme", isDark: true);
+            CodeHighlightTheme.Apply("BogusTheme", isDark: true);
 
-            ClassicAssert.AreEqual("VS Code Dark+", PreviewMarkdownScrollViewer.ActiveThemeName);
+            ClassicAssert.AreEqual("VS Code Dark+", CodeHighlightTheme.Active.Name);
         }
     }
 }
