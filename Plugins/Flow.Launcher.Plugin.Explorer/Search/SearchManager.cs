@@ -141,7 +141,8 @@ namespace Flow.Launcher.Plugin.Explorer.Search
                 case false
                     when CanUseIndexSearchByActionKeywords(activeActionKeywords):
                     filter = SearchFilter.Parse(query.Search);
-                    searchResults = Settings.IndexProvider.SearchAsync(GetEngineSearch(filter, Settings.IndexProvider is EverythingSearchManager), token);
+                    searchResults = Settings.IndexProvider.SearchAsync(GetEngineSearch(filter, Settings.IndexProvider is EverythingSearchManager,
+                        Settings.IndexSearchExcludedSubdirectoryPaths.Select(x => x.Path)), token);
                     engineName = Enum.GetName(Settings.IndexSearchEngine);
                     break;
                 default:
@@ -257,9 +258,10 @@ namespace Flow.Launcher.Plugin.Explorer.Search
         /// <summary>
         /// Everything filters extensions in the query itself, other engines get the name and are filtered afterwards.
         /// </summary>
-        private string GetEngineSearch(SearchFilter filter, bool isEverything)
+        /// <param name="excludedFolders">Left out of folder scoped searches, so searching inside an excluded folder still works.</param>
+        private string GetEngineSearch(SearchFilter filter, bool isEverything, IEnumerable<string> excludedFolders = null)
         {
-            return isEverything ? filter.ToEverythingSearch(GetExcludedFileTypes()) : filter.ToPlainSearch();
+            return isEverything ? filter.ToEverythingSearch(GetExcludedFileTypes(), excludedFolders) : filter.ToPlainSearch();
         }
 
         private string[] GetExcludedFileTypes()

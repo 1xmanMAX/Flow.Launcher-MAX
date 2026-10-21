@@ -507,6 +507,15 @@ namespace Flow.Launcher.Test.Plugins
             ClassicAssert.AreEqual("report !ext:log !*.pixpin*", filter.ToEverythingSearch(["log", "pixpin*"]));
         }
 
+        [Test]
+        public void GivenExcludedFolders_WhenBuildingEverythingSearch_ThenEachFolderIsExcludedByPath()
+        {
+            var filter = SearchFilter.Parse("report");
+
+            ClassicAssert.AreEqual(@"report !ext:log !path:""C:\$Recycle.Bin\"" !path:""C:\Temp\""",
+                filter.ToEverythingSearch(["log"], [@"C:\$Recycle.Bin", @"C:\Temp\", " "]));
+        }
+
         [TestCase("pixpin-lectura", true)]
         [TestCase("PIXPIN2D", true)]
         [TestCase("log", true)]

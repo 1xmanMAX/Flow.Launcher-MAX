@@ -52,10 +52,10 @@ namespace Flow.Launcher.Plugin.Explorer.Search
         public bool HasExtensions => Extensions.Count > 0;
 
         /// <summary>
-        /// Everything search text: the name, the typed extensions and the excluded ones, so excluded
+        /// Everything search text: the name, the typed extensions and the excluded extensions and folders, so excluded
         /// files are dropped by Everything itself and do not take up the result limit.
         /// </summary>
-        public string ToEverythingSearch(IEnumerable<string> excludedExtensions)
+        public string ToEverythingSearch(IEnumerable<string> excludedExtensions, IEnumerable<string> excludedFolders = null)
         {
             var parts = new List<string>();
             if (!string.IsNullOrEmpty(Name))
@@ -75,6 +75,11 @@ namespace Flow.Launcher.Plugin.Explorer.Search
                 // ext: takes no wildcards, so "pixpin*" becomes a file name pattern
                 parts.AddRange(excluded.Where(IsWildcard).Select(x => "!*." + x));
             }
+
+            // path: matches the term against the full path; the trailing separator keeps "C:\Temp" from also excluding "C:\Temp2"
+            parts.AddRange((excludedFolders ?? [])
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => $"!path:\"{x.TrimEnd('\\')}\\\""));
 
             return string.Join(' ', parts);
         }
