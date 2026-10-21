@@ -310,6 +310,10 @@ namespace Flow.Launcher.Plugin.Program
             {
                 _ = Task.Run(async () =>
                 {
+                    // With a cache to answer from, a periodic reindex (minutes of disk and CPU work) can wait until startup is over
+                    if (!cacheEmpty)
+                        await Task.Delay(TimeSpan.FromMinutes(2)).ConfigureAwait(false);
+
                     await IndexProgramsAsync().ConfigureAwait(false);
                     WatchProgramUpdate();
                 });
