@@ -50,6 +50,8 @@
     <system:String x:Key="plugin_explorer_display_more_info_in_tooltip">Mostrar más información, como el tamaño y la antigüedad, en los mensajes emergentes</system:String>
     <system:String x:Key="plugin_explorer_default_open_in_file_manager">Pulsar Entrar para abrir la carpeta en el administrador de archivos predeterminado</system:String>
     <system:String x:Key="plugin_explorer_boost_home_folder_score">Priorizar las carpetas personales (Documentos, Escritorio, Descargas, etc.) en los resultados de búsqueda</system:String>
+    <system:String x:Key="plugin_explorer_open_files_in_pindesk">Abrir archivos en PinDesk (si PinDesk está instalado)</system:String>
+    <system:String x:Key="plugin_explorer_open_files_in_pindesk_tooltip">Al pulsar Intro sobre un archivo se abre en PinDesk, con «Guardar en el chat» y «Abrir con otra aplicación» arriba. Las carpetas, los programas, los accesos directos y los scripts se abren como siempre; Ctrl+Intro sigue abriendo la carpeta que lo contiene.</system:String>
     <system:String x:Key="plugin_explorer_usewindowsindexfordirectorysearch">Usar búsqueda indexada para buscar rutas</system:String>
     <system:String x:Key="plugin_explorer_manageindexoptions">Opciones de indexación</system:String>
     <system:String x:Key="plugin_explorer_actionkeywordview_search">Buscar:</system:String>

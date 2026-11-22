@@ -205,6 +205,7 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -420,6 +421,16 @@
                     Margin="{StaticResource SettingPanelItemTopBottomMargin}"
                     Click="btnOpenIndexingOptions_Click"
                     Content="{DynamicResource plugin_explorer_Open_Window_Index_Option}" />
+
+                <CheckBox
+                    Grid.Row="13"
+                    Grid.Column="0"
+                    Grid.ColumnSpan="2"
+                    Margin="{StaticResource SettingPanelItemTopBottomMargin}"
+                    HorizontalAlignment="Left"
+                    Content="{DynamicResource plugin_explorer_open_files_in_pindesk}"
+                    IsChecked="{Binding Settings.OpenFilesInPinDesk}"
+                    ToolTip="{DynamicResource plugin_explorer_open_files_in_pindesk_tooltip}" />
             </Grid>
         </Expander>
 

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Controls;
 using System.Windows.Input;
+using Flow.Launcher.Plugin.Explorer.Helper;
 using Flow.Launcher.Plugin.Explorer.Search.Everything;
 using Flow.Launcher.Plugin.Explorer.Views;
 using Flow.Launcher.Plugin.SharedCommands;
@@ -372,7 +373,7 @@ namespace Flow.Launcher.Plugin.Explorer.Search
                         {
                             OpenFolder(filePath, filePath);
                         }
-                        else
+                        else if (!TryOpenInPinDesk(filePath))
                         {
                             OpenFile(filePath, Settings.UseLocationAsWorkingDir ? directory : string.Empty);
                         }
@@ -396,6 +397,20 @@ namespace Flow.Launcher.Plugin.Explorer.Search
             if (string.IsNullOrEmpty(extension)) { return false; }
 
             return MediaExtensions.Contains(extension.ToLowerInvariant());
+        }
+
+        /// <summary>
+        /// With "Open files in PinDesk" on and PinDesk installed, opens the file in PinDesk
+        /// (programs, shortcuts and scripts are never sent there). False means: open it as always.
+        /// </summary>
+        private static bool TryOpenInPinDesk(string filePath)
+        {
+            if (!Settings.OpenFilesInPinDesk)
+                return false;
+            if (!PinDeskHelper.TryOpen(filePath))
+                return false;
+            IncrementEverythingRunCounterIfNeeded(filePath);
+            return true;
         }
 
         private static void OpenFile(string filePath, string workingDir = "", bool asAdmin = false)

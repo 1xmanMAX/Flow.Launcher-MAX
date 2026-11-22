@@ -41,6 +41,12 @@ namespace Flow.Launcher.Plugin.Explorer
 
         public bool BoostHomeFolderScore { get; set; } = true;
 
+        /// <summary>
+        /// Open file results in PinDesk instead of their default application (only when PinDesk
+        /// is installed; folders, programs, shortcuts and scripts open as always).
+        /// </summary>
+        public bool OpenFilesInPinDesk { get; set; } = true;
+
         public string SearchActionKeyword { get; set; } = Query.GlobalPluginWildcardSign;
 
         public bool SearchActionKeywordEnabled { get; set; } = true;
